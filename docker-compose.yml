@@ -1,0 +1,39 @@
+version: '3.8'
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      - localstack
+    volumes:
+      - .:/app
+    command: gunicorn -w 8 -k uvicorn.workers.UvicornWorker main_api:app --chdir ./src --bind 0.0.0.0:8000 --reload
+
+  consumer:
+    build: .
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      - localstack
+    volumes:
+      - .:/app
+    command: python ./src/main_consumer.py
+
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs
+      - DEBUG=1
+      - QUEUE_NAME=ecg_queue
+    volumes:
+      - ./scripts/localstack_bootstrap.sh:/etc/localstack/init/ready.d/init-aws.sh
+      - /var/run/docker.sock:/var/run/docker.sock
