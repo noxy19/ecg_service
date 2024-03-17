@@ -4,12 +4,30 @@ version = "0.1.0"
 description = ""
 authors = ["Joan Barba <joanbarba@proton.me>"]
 readme = "README.md"
+packages = [{include = "src", from = "."}]
+
+[tool.poetry.scripts]
+start = "uvicorn main:app --reload --app-dir=src"
 
 [tool.poetry.dependencies]
 python = "^3.11"
 fastapi = "^0.110.0"
 uvicorn = "^0.28.0"
+gunicorn = "^21.2.0"
+result = "^0.16.1"
+pyjwt = "^2.8.0"
+pydantic = "^2.6.4"
+pydantic-settings = "^2.2.1"
+aiobotocore = "^2.12.1"
+celery = "^5.3.6"
 
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.2.0"
+mypy = "^1.9.0"
+
+[tool.black]
+line-length=120
 
 [build-system]
 requires = ["poetry-core"]
