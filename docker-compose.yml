@@ -10,6 +10,7 @@ services:
       PYTHONUNBUFFERED: "1"
     depends_on:
       - localstack
+      - db
     volumes:
       - .:/app
     command: gunicorn -w 8 -k uvicorn.workers.UvicornWorker main_api:app --chdir ./src --bind 0.0.0.0:8000 --reload
@@ -22,6 +23,7 @@ services:
       PYTHONUNBUFFERED: "1"
     depends_on:
       - localstack
+      - db
     volumes:
       - .:/app
     command: python ./src/main_consumer.py
@@ -37,3 +39,11 @@ services:
     volumes:
       - ./scripts/localstack_bootstrap.sh:/etc/localstack/init/ready.d/init-aws.sh
       - /var/run/docker.sock:/var/run/docker.sock
+
+  db:
+    image: postgres
+    restart: always
+    environment:
+      - POSTGRES_PASSWORD=dummy_pass
+    volumes:
+      - ./migrations:/docker-entrypoint-initdb.d
