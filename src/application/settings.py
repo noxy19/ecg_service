@@ -11,3 +11,6 @@ class Settings(BaseSettings):
     aws_access_key_id: str = Field()
     aws_secret_access_key: str = Field()
     region_name: str = Field()
+    postgres_user: str = Field()
+    postgres_password: str = Field()
+    admin_password: str = Field()
