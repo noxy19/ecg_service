@@ -18,3 +18,15 @@ class Electrocardiogram(BaseModel):
     user_id: UUID
     date: str
     leads: list[ElectrocardiogramLead]
+
+
+class EcgLeadInsight(BaseModel):
+    ecg_id: UUID
+    lead_name: LeadType
+    zero_crossings: int
+
+
+class User(BaseModel):
+    id: UUID
+    username: str
+    hashed_password: str
