@@ -1,5 +1,6 @@
 from src.application.process_ecg_use_case import ProcessEcgUseCase
 from src.infrastructure import providers
+from src.infrastructure.postgres_repository import PostgresEcgRepository
 from typing import Protocol
 from src.logger_config import setup_global_logger
 from src.domain.count_zero_crossings_service import CountZeroCrossingsService
@@ -9,6 +10,7 @@ from result import Result, Ok
 import asyncio
 from aiobotocore.session import get_session  # type: ignore[import-untyped]
 import json
+from psycopg_pool import AsyncConnectionPool
 
 logger = logging.getLogger()
 
@@ -36,6 +38,11 @@ class SqsPoller:
         self._aws_endpoint_url = aws_endpoint_url
         self._back_off_time = 5
 
+    async def _is_queue_created(self, client):
+        response = await client.list_queues()
+        queues_urls = response.get("QueueUrls", [])
+        return any(self._queue_url == url for url in queues_urls)
+
     async def run(self):
         session = get_session()
         async with session.create_client(
@@ -46,6 +53,11 @@ class SqsPoller:
             aws_secret_access_key=self._aws_secret_access_key,
         ) as client:
             while True:
+                if not await self._is_queue_created(client):
+                    logger.warning("Queue not found, retrying")
+                    await asyncio.sleep(1)
+                    continue
+
                 response = await client.receive_message(
                     QueueUrl=self._queue_url, MaxNumberOfMessages=10, WaitTimeSeconds=20
                 )
@@ -54,7 +66,7 @@ class SqsPoller:
 
                 for message in messages:
                     logger.info(f"Processing message {message['MessageId']}: {message['Body']}")
-                    event = PostEcgEvent.parse_obj(json.loads(message['Body']))
+                    event = PostEcgEvent.parse_obj(json.loads(message["Body"]))
 
                     result = await self._processor.execute(event)
 
@@ -64,11 +76,15 @@ class SqsPoller:
                         await asyncio.sleep(self._back_off_time)
 
 
-if __name__ == "__main__":
+async def main():
     setup_global_logger()
     settings = providers.settings_provider()
     zero_crossings_service = CountZeroCrossingsService()
-    processor = ProcessEcgUseCase(zero_crossings_service)
+    connectionPool = AsyncConnectionPool(
+        f"postgresql://{settings.postgres_user}:{settings.postgres_password}@db", max_size=10
+    )
+    repository = PostgresEcgRepository(connectionPool)
+    processor = ProcessEcgUseCase(zero_crossings_service, repository)
     poller = SqsPoller(
         processor=processor,
         queue_url=settings.queue_url,
@@ -77,4 +93,8 @@ if __name__ == "__main__":
         region_name=settings.region_name,
         aws_endpoint_url=settings.aws_endpoint_url,
     )
-    asyncio.run(poller.run())
+    await poller.run()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
