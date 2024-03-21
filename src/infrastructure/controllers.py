@@ -1,9 +1,11 @@
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import Depends, APIRouter
-from .jwt_auth import get_current_user, JwtClaims
-from .providers import create_ecg_use_case_provider
+from .jwt_auth import get_current_user, JwtClaims, is_admin_user_valid
+from .providers import create_ecg_use_case_provider, get_insights_use_case_provider, user_use_case_provider
 from src.application.create_ecg_use_case import CreateEcgUseCase
+from src.application.get_insights_use_case import GetInsightsUseCase
+from src.application.user_use_case import UserUseCase
 from src.domain.model import Electrocardiogram, ElectrocardiogramLead, LeadType
 import logging
 from uuid import UUID, uuid4
@@ -27,6 +29,11 @@ router = APIRouter()
 logger = logging.getLogger()
 
 
+@router.get("/health")
+async def health():
+    return "up"
+
+
 def from_dto_to_domain(ecg_dto: ElectrocardiogramDto, user_id: UUID) -> Electrocardiogram:
     return Electrocardiogram(
         id=ecg_dto.id,
@@ -45,7 +52,6 @@ async def post_electrocardiogram(
     user: JwtClaims = Depends(get_current_user),
     use_case: CreateEcgUseCase = Depends(create_ecg_use_case_provider),
 ):
-    logger.info("endpoint entry")
     ecg = from_dto_to_domain(ecg_dto=ecg_dto, user_id=user.sub)
     result = await use_case.execute(ecg)
     if isinstance(result, Ok):
@@ -56,3 +62,53 @@ async def post_electrocardiogram(
         raise HTTPException(
             status_code=400, detail=f"Error processing the ECG, contact support with this request id: {request_id}"
         )
+
+
+@router.get("/electrocardiograms/{ecg_id}/insights")
+async def get_ecg_insights(
+    ecg_id: UUID,
+    user: JwtClaims = Depends(get_current_user),
+    use_case: GetInsightsUseCase = Depends(get_insights_use_case_provider),
+):
+    result = await use_case.execute(ecg_id=ecg_id, user_id=user.sub)
+    if isinstance(result, Ok):
+        return result.ok_value
+    else:
+        request_id = uuid4()
+        logger.error(f"Error processing request {request_id}: {result.err()}")
+        raise HTTPException(
+            status_code=400, detail=f"Error processing the ECG, contact support with this request id: {request_id}"
+        )
+
+
+class UserDto(BaseModel):
+    username: str
+    password: str
+
+
+@router.post("/admin/user")
+async def post_user(
+    data: UserDto,
+    is_valid: bool = Depends(is_admin_user_valid),
+    use_case: UserUseCase = Depends(user_use_case_provider),
+):
+    if not is_valid:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    result = await use_case.create(data)
+    if isinstance(result, Ok):
+        return "User created"
+    else:
+        request_id = uuid4()
+        logger.error(f"Error processing request {request_id}: {result.err()}")
+        raise HTTPException(
+            status_code=400, detail=f"Error creating the user, contact support with this request id: {request_id}"
+        )
+
+
+@router.post("/users/login")
+async def login_user(data: UserDto, use_case: UserUseCase = Depends(user_use_case_provider)):
+    result = await use_case.login(data)
+    if isinstance(result, Ok):
+        return {"jwt_login": result.ok()}
+    logger.error(result.err())
+    raise HTTPException(status_code=401, detail="Invalid authentication credentials")
